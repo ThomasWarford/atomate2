@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from jobflow import , Maker, Flow
+from jobflow import Maker, Flow
 from pymatgen.io.vasp.sets import MatPESStaticSet
 
 from atomate2.vasp.jobs.matpes import MatPesGGAStaticMaker, MatPesMetaGGAStaticMaker
