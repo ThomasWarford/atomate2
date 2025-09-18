@@ -221,6 +221,7 @@ class FileClient:
         dest_filename: str | Path,
         src_host: str | None = None,
         dest_host: str | None = None,
+        move_file: bool = False,
     ) -> None:
         """
         Copy a file from source to destination.
@@ -235,25 +236,35 @@ class FileClient:
             A remote file system host for the source file.
         dest_host : str or None
             A remote file system host for the destination file.
+        move_file : bool, defaults to False
+            If True, the source file will be moved instead of copied.
         """
         src_filename = self.abspath(src_filename, host=src_host)
         dest_filename = self.abspath(dest_filename, host=dest_host)
 
         if src_host is None and dest_host is None:
             # copying on local machine
-            shutil.copy2(src_filename, dest_filename)
+            if move_file:
+                shutil.move(src_filename, dest_filename)
+            else:
+                shutil.copy2(src_filename, dest_filename)
         elif src_host is not None and dest_host is None:
             # copying from remote to local
             self.get_sftp(src_host).get(str(src_filename), str(dest_filename))
+            if move_file:
+                self.get_sftp(src_host).unlink(str(src_filename))
         elif src_host is None and dest_host is not None:
             # copying from local to remote
             self.get_sftp(dest_host).put(str(src_filename), str(dest_filename))
+            if move_file:
+                Path(src_filename).unlink()
         elif src_host == dest_host:
             # copying between the same remote machine.
             ssh = self.get_ssh(src_host)
-            _, _, stderr = ssh.exec_command(f"cp {src_filename} {dest_filename}")
+            command = f"mv {src_filename} {dest_filename}" if move_file else f"cp {src_filename} {dest_filename}"
+            _, _, stderr = ssh.exec_command(command)
             if len(stderr.readlines()) > 0 and self.verbose:
-                warnings.warn(f"Copy command gave error: {stderr}", stacklevel=2)
+                warnings.warn(f"{'Move' if move_file else 'Copy'} command gave error: {stderr}", stacklevel=2)
         else:
             # copying between two remote hosts; this is a pain and it is unlikely anyone
             # will want to do it.

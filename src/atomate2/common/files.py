@@ -20,6 +20,7 @@ def copy_files(
     allow_missing: bool = False,
     file_client: FileClient | None = None,
     link_files: bool = False,
+    move_files: bool = False,
 ) -> None:
     r"""
     Copy files between source and destination folders.
@@ -52,7 +53,10 @@ def copy_files(
         A file client to use for performing file operations.
     link_files : bool
         Whether to link the files instead of copying them. This option will raise an
-        error if it is used in combination with a file_client.
+        error if it is used in combination with a file_client or move_files.
+    move_files : bool
+        Whether to move files (removing original) instead of copying them. This option will raise an
+        error if it is used in combination with link_files.
     """
     src_dir = file_client.abspath(src_dir, host=src_host)
     if dest_dir is None:
@@ -62,6 +66,9 @@ def copy_files(
         file_client, src_dir, include_files, exclude_files, src_host
     )
 
+    if link_files and move_files:
+        raise ValueError("Both link_files and move_files cannot be True.")
+
     for file in files:
         from_file = src_dir / file
         to_file = Path(file.parent) / f"{prefix}{file.name}"
@@ -70,7 +77,7 @@ def copy_files(
             if link_files and src_host is None:
                 file_client.link(from_file, to_file)
             else:
-                file_client.copy(from_file, to_file, src_host=src_host)
+                file_client.copy(from_file, to_file, src_host=src_host, move_file=True)
         except FileNotFoundError:
             if not allow_missing:
                 raise

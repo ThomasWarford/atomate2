@@ -31,6 +31,7 @@ def copy_vasp_outputs(
     contcar_to_poscar: bool = True,
     force_overwrite: bool | str = False,
     file_client: FileClient | None = None,
+    move_files: bool = False,
 ) -> None:
     """
     Copy VASP output files to the current directory.
@@ -62,6 +63,8 @@ def copy_vasp_outputs(
             - `"skip"` Skip files they already exist.
     file_client : .FileClient
         A file client to use for performing file operations.
+    move_files : bool
+        Whether to move files (removing original) instead of copying them.
     """
     src_dir = strip_hostname(src_dir)  # TODO: Handle hostnames properly.
 
@@ -91,6 +94,7 @@ def copy_vasp_outputs(
         src_host=src_host,
         include_files=required_files + optional_files,
         file_client=file_client,
+        move_files=move_files,
     )
 
     gunzip_files(
