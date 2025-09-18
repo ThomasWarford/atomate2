@@ -15,13 +15,14 @@ from pymatgen.io.vasp.sets import MatPESStaticSet
 
 from atomate2.vasp.jobs.matpes import MatPesGGAStaticMaker, MatPesMetaGGAStaticMaker
 from atomate2.common.jobs.utils import remove_workflow_files
-from atomate2.utils.path import strip_hostname
+from atomate2.common.utils import _recursive_get_dir_names
 
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
     from pathlib import Path
     from pymatgen.core import Structure
+    from collections.abc import Sequence
 
 def center_of_mass(structure: Structure) -> NDArray[np.float64]:
         """Center of mass of molecule."""
@@ -85,6 +86,9 @@ class SurfPesStaticFlowMaker(Maker):
     efield_axis: int = 3  # IDIPOL axis (3 = z)
     chain_fields: bool = True
 
+    clean_files: Sequence[str] | None = ("WAVECAR", "REPORT", "CHG") # WAVECAR is big, REPORT concerns molecular dyanmics, all CHG info is stored in CHGCAR, 
+    # TODO: figure out what's up with orig!!
+
     def __post_init__(self) -> None:
         """Validate flow."""
         if self.static1 is None and self.static2 is None and not self.efield_values:
@@ -141,5 +145,16 @@ class SurfPesStaticFlowMaker(Maker):
                 if self.chain_fields:
                     prev_for_field = field_job.output.dir_name
                 output["efield_statics"][efield] = field_job.output
+
+        self.clean_files = self.clean_files or []
+        if len(self.clean_files) > 0:
+            directories: list[str] = []
+            _recursive_get_dir_names(jobs, directories)
+            cleanup = remove_workflow_files(
+                directories=directories,
+                file_names=self.clean_files,
+                allow_zpath=True,
+            )
+            jobs += [cleanup]
 
         return Flow(jobs=jobs, output=output, name=self.name)
