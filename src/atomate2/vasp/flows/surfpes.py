@@ -15,9 +15,7 @@ from pymatgen.io.vasp.sets import MatPESStaticSet
 
 from atomate2.vasp.jobs.matpes import MatPesGGAStaticMaker, MatPesMetaGGAStaticMaker
 from atomate2.common.jobs.utils import remove_workflow_files
-from atomate2.vasp.files import copy_vasp_outputs
 from atomate2.utils.path import strip_hostname
-from pathlib import Path
 
 
 if TYPE_CHECKING:
@@ -34,14 +32,6 @@ def center_of_mass(structure: Structure) -> NDArray[np.float64]:
             center += site.frac_coords * wt
             total_weight += wt
         return center / total_weight
-
-@job
-def delete_vasp_files(cleanup_dir, dependency=None):
-    cleanup_dir = strip_hostname(cleanup_dir)
-    print(cleanup_dir)
-    print(list(Path(cleanup_dir).iterdir()))
-    print(remove_workflow_files.function([cleanup_dir, ['WAVECAR']]))
-    return remove_workflow_files.function([cleanup_dir, ['WAVECAR']])
 
 @dataclass
 class SurfPesStaticFlowMaker(Maker):
@@ -100,7 +90,7 @@ class SurfPesStaticFlowMaker(Maker):
         if self.static1 is None and self.static2 is None and not self.efield_values:
             raise ValueError("Must provide at least one job: static1, static2, efield_values")
 
-    def make(self, structure: Structure, prev_dir: str | Path | None = None, cleanup: bool = True) -> Flow:
+    def make(self, structure: Structure, prev_dir: str | Path | None = None) -> Flow:
         """Create a flow with MatPES statics and optional electric-field sweep."""
         jobs = []
         output = {}
