@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from jobflow import job, Maker, Flow
+from jobflow import Maker, Flow
 from pymatgen.io.vasp.sets import MatPESStaticSet
 
 from atomate2.vasp.jobs.matpes import MatPesGGAStaticMaker, MatPesMetaGGAStaticMaker
@@ -86,7 +86,10 @@ class SurfPesStaticFlowMaker(Maker):
     efield_axis: int = 3  # IDIPOL axis (3 = z)
     chain_fields: bool = True
 
-    clean_files: Sequence[str] | None = ("WAVECAR", "REPORT", "CHG") # WAVECAR is big, REPORT concerns molecular dyanmics, all CHG info is stored in CHGCAR, 
+    clean_files: Sequence[str] | None = (
+        "WAVECAR", "POTCAR", "XDATCAR", "REPORT", "CHG", # WAVECAR, POTCAR are big; REPORT, XDATCAR concern molecular dynamics; all CHG info is stored in CHGCAR
+                   "POTCAR.orig", "INCAR.orig", "POSCAR.orig" # not used in new calculations
+        ) 
     # TODO: figure out what's up with orig!!
 
     def __post_init__(self) -> None:
