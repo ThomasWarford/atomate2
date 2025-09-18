@@ -9,16 +9,20 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 import numpy as np
-from numpy.typing import NDArray
 
-from jobflow import Flow, Maker
+from jobflow import job, Maker, Flow
 from pymatgen.io.vasp.sets import MatPESStaticSet
 
 from atomate2.vasp.jobs.matpes import MatPesGGAStaticMaker, MatPesMetaGGAStaticMaker
+from atomate2.common.jobs.utils import remove_workflow_files
+from atomate2.vasp.files import copy_vasp_outputs
+from atomate2.utils.path import strip_hostname
+from pathlib import Path
+
 
 if TYPE_CHECKING:
+    from numpy.typing import NDArray
     from pathlib import Path
-
     from pymatgen.core import Structure
 
 def center_of_mass(structure: Structure) -> NDArray[np.float64]:
@@ -30,6 +34,14 @@ def center_of_mass(structure: Structure) -> NDArray[np.float64]:
             center += site.frac_coords * wt
             total_weight += wt
         return center / total_weight
+
+@job
+def delete_vasp_files(cleanup_dir, dependency=None):
+    cleanup_dir = strip_hostname(cleanup_dir)
+    print(cleanup_dir)
+    print(list(Path(cleanup_dir).iterdir()))
+    print(remove_workflow_files.function([cleanup_dir, ['WAVECAR']]))
+    return remove_workflow_files.function([cleanup_dir, ['WAVECAR']])
 
 @dataclass
 class SurfPesStaticFlowMaker(Maker):
@@ -71,6 +83,9 @@ class SurfPesStaticFlowMaker(Maker):
             # start from pre-conditioned WAVECAR from static1 to speed up convergence
             # could copy CHGCAR too but is redundant since VASP can reconstruct it from
             # WAVECAR
+            input_set_generator=MatPESStaticSet(
+                    xc_functional="R2SCAN", user_incar_settings={"GGA": None, "LWAVE": True}
+                ),
             copy_vasp_kwargs={"additional_vasp_files": ("WAVECAR",)}
         )
     )
@@ -85,7 +100,7 @@ class SurfPesStaticFlowMaker(Maker):
         if self.static1 is None and self.static2 is None and not self.efield_values:
             raise ValueError("Must provide at least one job: static1, static2, efield_values")
 
-    def make(self, structure: Structure, prev_dir: str | Path | None = None) -> Flow:
+    def make(self, structure: Structure, prev_dir: str | Path | None = None, cleanup: bool = True) -> Flow:
         """Create a flow with MatPES statics and optional electric-field sweep."""
         jobs = []
         output = {}
@@ -115,7 +130,10 @@ class SurfPesStaticFlowMaker(Maker):
             for idx, efield in enumerate(self.efield_values):
                 field_set = MatPESStaticSet(
                     # Ensure dipole correction and field are set
+                    xc_functional="R2SCAN",
                     user_incar_settings={
+                        "GGA": None,
+                        "LWAVE": True,
                         "LDIPOL": True,
                         "IDIPOL": self.efield_axis,
                         "EFIELD": efield,
@@ -123,9 +141,9 @@ class SurfPesStaticFlowMaker(Maker):
                     }
                 )
                 field_maker = MatPesMetaGGAStaticMaker(
+                    name=f"SurfPES field static E={efield}",
                     input_set_generator=field_set,
                     copy_vasp_kwargs={"additional_vasp_files": ("WAVECAR",)},
-                    name=f"SurfPES field static E={efield}"
                 )
                 field_job = field_maker.make(structure, prev_dir=prev_for_field)
                 jobs.append(field_job)
