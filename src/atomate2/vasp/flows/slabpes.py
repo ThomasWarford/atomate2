@@ -8,8 +8,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-import numpy as np
-
 from jobflow import Maker, Flow
 from pymatgen.io.vasp.sets import SlabPESStaticSet
 
@@ -19,7 +17,6 @@ from atomate2.common.utils import _recursive_get_dir_names
 
 
 if TYPE_CHECKING:
-    from numpy.typing import NDArray
     from pathlib import Path
     from pymatgen.core import Structure
     from collections.abc import Sequence
