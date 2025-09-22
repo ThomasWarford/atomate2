@@ -66,7 +66,7 @@ class SlabPesStaticFlowMaker(Maker):
     clean_files: Sequence[str] | None = (
         "WAVECAR", "POTCAR", "XDATCAR", "REPORT", "CHG", # WAVECAR, POTCAR are big; REPORT, XDATCAR concern molecular dynamics; all CHG info is stored in CHGCAR
                    "POTCAR.orig", "POSCAR.orig" # not used in new calculations
-        ) 
+        )
 
     def __post_init__(self) -> None:
         """Validate flow."""
@@ -119,12 +119,15 @@ class SlabPesStaticFlowMaker(Maker):
                     prev_for_field = field_job.output.dir_name
                 output["efield_statics"][efield] = field_job.output
 
+        # add vasp_dir_names to output to aid post-processing
+        vasp_directories: list[str] = []
+        _recursive_get_dir_names(jobs, vasp_directories)
+        output["vasp_dir_names"] = vasp_directories
+
         self.clean_files = self.clean_files or []
         if len(self.clean_files) > 0:
-            directories: list[str] = []
-            _recursive_get_dir_names(jobs, directories)
             cleanup = remove_workflow_files(
-                directories=directories,
+                directories=vasp_directories,
                 file_names=self.clean_files,
                 allow_zpath=True,
             )
