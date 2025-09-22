@@ -119,10 +119,8 @@ class SlabPesStaticFlowMaker(Maker):
                     prev_for_field = field_job.output.dir_name
                 output["efield_statics"][efield] = field_job.output
 
-        # add vasp_dir_names to output to aid post-processing
         vasp_directories: list[str] = []
         _recursive_get_dir_names(jobs, vasp_directories)
-        output["vasp_dir_names"] = vasp_directories
 
         self.clean_files = self.clean_files or []
         if len(self.clean_files) > 0:
