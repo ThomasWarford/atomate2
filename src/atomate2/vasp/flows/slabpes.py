@@ -44,15 +44,15 @@ def post_process_slabpes(workdir_names, output_dir, uuids=None):
         xc_functional = 'R2SCAN' if 'METAGGA' in vasprun.incar else 'PBE'
         has_dipole_correction = vasprun.incar.get('LDIPOL', False)
 
-        # get energy, stress, forces using ASE
+        # get energy, stress, forces, dipole using ASE
         atoms = read(zpath(workdir/'vasprun.xml'), -1)
         atoms.info['ref_energy'] = atoms.get_total_energy()
         atoms.info['ref_stress'] = atoms.get_stress(voigt=True)
         atoms.arrays['ref_forces'] = atoms.get_forces()
+        try: dipole = atoms.get_dipole_moment()
+        except: dipole = None
         atoms.calc = None
 
-
-        dipole = vasprun.ionic_steps[-1].get('dipole', None)
 
         # Determine if custodian applied any corrections (i.e., job was restarted)
         try:
@@ -74,16 +74,15 @@ def post_process_slabpes(workdir_names, output_dir, uuids=None):
         except: efermi_pmg = None
         efield = vasprun.incar.get('EFIELD', None)
 
-        if dipole: atoms.info['dipole'] = dipole
-  
+        if dipole is not None: atoms.info['dipole'] = dipole
         atoms.info['restart_count'] = restart_count
         atoms.info['num_scf'] = num_scf
         atoms.info['efermi'] = efermi
-        if efermi_pmg: atoms.info['efermi_pmg'] = efermi_pmg
+        if efermi_pmg is not None: atoms.info['efermi_pmg'] = efermi_pmg
         if efield is not None: atoms.info['efield'] = efield
-        if vacuum_potential_upper: atoms.info['vacuum_potential_upper'] = vacuum_potential_upper
-        if vacuum_potential_lower: atoms.info['vacuum_potential_lower'] = vacuum_potential_lower
-        if drift: atoms.info['drift'] = drift
+        if vacuum_potential_upper is not None: atoms.info['vacuum_potential_upper'] = vacuum_potential_upper
+        if vacuum_potential_lower is not None: atoms.info['vacuum_potential_lower'] = vacuum_potential_lower
+        if drift is not None: atoms.info['drift'] = drift
         atoms.info['final_electronic_step'] = vasprun.ionic_steps[-1]['electronic_steps'][-1]
         
         # for tracking purposes
