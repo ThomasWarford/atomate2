@@ -17,7 +17,9 @@ from atomate2.vasp.powerups import update_user_incar_settings
 from atomate2.utils.path import strip_hostname
 from pymatgen.io.vasp import Outcar, Vasprun, Chgcar, Locpot
 from monty.os.path import zpath
+from monty.serialization import loadfn
 from ase.io import read, write
+from mp_api.client import MPRester
 
 from atomate2.vasp.jobs.matpes import MatPesGGAStaticMaker, MatPesMetaGGAStaticMaker
 from atomate2.common.jobs.utils import remove_workflow_files
@@ -29,10 +31,23 @@ if TYPE_CHECKING:
     from pymatgen.core import Structure
     from collections.abc import Sequence
 
+def workdir_to_bulk_bandgap(workdir):
+    try:
+        dct = loadfn(f'{workdir}/jfremote_in.json')
+        bulk_mpid = dct['job'].metadata['bulk_mpid']
+        with MPRester() as mpr:
+            docs = mpr.materials.summary.search(
+                material_ids=[bulk_mpid],
+                fields=["material_id", "band_gap"]
+            )
+        return docs[0].band_gap 
+    except:
+        return None
+
 @job
-def post_process_slabpes(workdir_names, output_dir, uuids=None):
+def post_process_slabpes(workdir_names, output_dir, uuids=None): # take mp_id?
     dataset_dir = Path(output_dir)
-    for i, workdir in enumerate(workdir_names):
+    for i, workdir in enumerate(workdir_names): # TODO: parallelize to allow running on short queue
         workdir = Path(strip_hostname(workdir))
         vasprun = Vasprun(zpath(workdir/'vasprun.xml'), parse_potcar_file=False)
         if not vasprun.converged_electronic:
@@ -74,16 +89,24 @@ def post_process_slabpes(workdir_names, output_dir, uuids=None):
         except: efermi_pmg = None
         efield = vasprun.incar.get('EFIELD', None)
 
+        try: band_gap = vasprun.get_band_structure(efermi="smart").get_band_gap()
+        except: band_gap = None
+
+        bulk_band_gap = workdir_to_bulk_bandgap(workdir)
+
         if dipole is not None: atoms.info['dipole'] = dipole
         atoms.info['restart_count'] = restart_count
         atoms.info['num_scf'] = num_scf
         atoms.info['efermi'] = efermi
         if efermi_pmg is not None: atoms.info['efermi_pmg'] = efermi_pmg
+        if band_gap is not None: atoms.info['band_gap'] = band_gap
+        if bulk_band_gap is not None: atoms.info['bulk_band_gap'] = bulk_band_gap
         if efield is not None: atoms.info['efield'] = efield
         if vacuum_potential_upper is not None: atoms.info['vacuum_potential_upper'] = vacuum_potential_upper
         if vacuum_potential_lower is not None: atoms.info['vacuum_potential_lower'] = vacuum_potential_lower
         if drift is not None: atoms.info['drift'] = drift
         atoms.info['final_electronic_step'] = vasprun.ionic_steps[-1]['electronic_steps'][-1]
+        atoms.info['time'] = outcar.run_stats['Elapsed time (sec)']
         
         # for tracking purposes
         atoms.info['vasp_dir_name'] = str(workdir)
