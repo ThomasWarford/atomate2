@@ -155,7 +155,7 @@ class SlabPesStaticFlowMaker(Maker):
     static1: Maker | None = field(
         default_factory=lambda: MatPesGGAStaticMaker(
             name=f"SlabPES GGA static",
-            input_set_generator=SlabPESStaticSet(),
+            input_set_generator=SlabPESStaticSet(xc_functional='PBE'),
         )
     )
     static2: Maker | None = field(
