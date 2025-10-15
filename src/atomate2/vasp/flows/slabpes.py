@@ -53,15 +53,14 @@ def add_tags_from_workdir(workdir, atoms):
 
         atoms_copy.info['num_adsorbate_atoms'] = sum(tags == 2)
 
-        try:  
-            adsorbate_forces = atoms_copy.arrays['ref_forces'][tags == 2]
-            net_adsorbate_force = adsorbate_forces.sum(axis=0)
-            atoms_copy.info['net_adsorbate_force'] = net_adsorbate_force
-        except:
-            pass
+        adsorbate_forces = atoms_copy.arrays['ref_forces'][tags == 2]
+        net_adsorbate_force = adsorbate_forces.sum(axis=0)
+        atoms_copy.info['net_adsorbate_force'] = net_adsorbate_force
+        
 
         return atoms_copy
     except:
+        print('Failed to add tags')
         return atoms
 
 @job
