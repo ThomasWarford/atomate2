@@ -43,9 +43,29 @@ def workdir_to_bulk_bandgap(workdir):
         return docs[0].band_gap 
     except:
         return None
+    
+def add_tags_from_workdir(workdir, atoms):
+    try:
+        dct = loadfn(f'{workdir}/jfremote_in.json')
+        tags = np.array(dct['job'].function_args[0].site_properties['tags'])
+        atoms_copy = atoms.copy()
+        atoms_copy.set_tags(tags)
+
+        atoms_copy.info['num_adsorbate_atoms'] = sum(tags == 2)
+
+        try:  
+            adsorbate_forces = atoms_copy.arrays['ref_forces'][tags == 2]
+            net_adsorbate_force = adsorbate_forces.sum(axis=0)
+            atoms_copy.info['net_adsorbate_force'] = net_adsorbate_force
+        except:
+            pass
+
+        return atoms_copy
+    except:
+        return atoms
 
 @job
-def post_process_slabpes(workdir_names, output_dir, uuids=None, process_volumetric=True):
+def post_process_slabpes(workdir_names, output_dir, uuids=None, process_volumetric=False):
     dataset_dir = Path(output_dir)
     for i, workdir in enumerate(workdir_names): # TODO: parallelize to allow running on short queue
         workdir = Path(strip_hostname(workdir))
@@ -112,6 +132,9 @@ def post_process_slabpes(workdir_names, output_dir, uuids=None, process_volumetr
         atoms.info['vasp_dir_name'] = str(workdir)
         if uuids:
             atoms.info['uuid'] = uuids[i]
+
+        # adsorbate tags + net adsorbate force
+        atoms = add_tags_from_workdir(workdir, atoms) # TODO: test
 
         # save
         functional_dipole_label = xc_functional
