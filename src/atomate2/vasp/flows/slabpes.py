@@ -31,10 +31,8 @@ if TYPE_CHECKING:
     from pymatgen.core import Structure
     from collections.abc import Sequence
 
-def workdir_to_bulk_bandgap(workdir):
+def bulk_mpid_to_bulk_bandgap(bulk_mpid):
     try:
-        dct = loadfn(f'{workdir}/jfremote_in.json')
-        bulk_mpid = dct['job'].metadata['bulk_mpid']
         with MPRester() as mpr:
             docs = mpr.materials.summary.search(
                 material_ids=[bulk_mpid],
@@ -44,10 +42,9 @@ def workdir_to_bulk_bandgap(workdir):
     except:
         return None
     
-def add_tags_from_workdir(workdir, atoms):
+def add_tags_from_input_dct(input_dct, atoms):
     try:
-        dct = loadfn(f'{workdir}/jfremote_in.json')
-        tags = np.array(dct['job'].function_args[0].site_properties['tags'])
+        tags = np.array(input_dct['job'].function_args[0].site_properties['tags'])
         atoms_copy = atoms.copy()
         atoms_copy.set_tags(tags)
 
@@ -76,6 +73,8 @@ def post_process_slabpes(workdir_names, output_dir, uuids=None, process_volumetr
         outcar.read_vacuum_potentials() # put vacuum_potential_upper, vacuum_potential_lower in outcar.data, if found
         
         id = vasprun.incar['SYSTEM']
+        input_dct = loadfn(f'{workdir}/jfremote_in.json')
+        bulk_mpid = input_dct['job'].metadata.get('bulk_mpid', None)
         xc_functional = 'R2SCAN' if 'METAGGA' in vasprun.incar else 'PBE'
         has_dipole_correction = vasprun.incar.get('LDIPOL', False)
 
@@ -111,16 +110,21 @@ def post_process_slabpes(workdir_names, output_dir, uuids=None, process_volumetr
 
         try: band_gap = vasprun.get_band_structure(efermi="smart").get_band_gap()
         except: band_gap = None
-
-        bulk_band_gap = workdir_to_bulk_bandgap(workdir)
-
+        
+        # get materials project properties
+        bulk_band_gap = None
+        if bulk_mpid is not None:
+            atoms.info['bulk_mpid'] = bulk_mpid
+            bulk_band_gap = bulk_mpid_to_bulk_bandgap(bulk_mpid)
+        if bulk_band_gap is not None: atoms.info['bulk_band_gap'] = bulk_band_gap
+        
+        # 
         if dipole is not None: atoms.info['dipole'] = dipole
         atoms.info['restart_count'] = restart_count
         atoms.info['num_scf'] = num_scf
         atoms.info['efermi'] = efermi
         if efermi_pmg is not None: atoms.info['efermi_pmg'] = efermi_pmg
         if band_gap is not None: atoms.info['band_gap'] = band_gap
-        if bulk_band_gap is not None: atoms.info['bulk_band_gap'] = bulk_band_gap
         if efield is not None: atoms.info['efield'] = efield
         if vacuum_potential_upper is not None: atoms.info['vacuum_potential_upper'] = vacuum_potential_upper
         if vacuum_potential_lower is not None: atoms.info['vacuum_potential_lower'] = vacuum_potential_lower
@@ -134,7 +138,7 @@ def post_process_slabpes(workdir_names, output_dir, uuids=None, process_volumetr
             atoms.info['uuid'] = uuids[i]
 
         # adsorbate tags + net adsorbate force
-        atoms = add_tags_from_workdir(workdir, atoms) # TODO: test
+        atoms = add_tags_from_input_dct(input_dct, atoms) # TODO: test
 
         # save
         functional_dipole_label = xc_functional
