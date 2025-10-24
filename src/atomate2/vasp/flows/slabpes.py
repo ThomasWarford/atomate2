@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from jobflow import Maker, Flow, job
+from jobflow import Maker, Flow, job, OnMissing
 from pymatgen.io.vasp.sets import SlabPESStaticSet
 import numpy as np
 
@@ -67,6 +67,7 @@ def add_tags_from_workdir(workdir, atoms):
 def post_process_slabpes(workdir_names, output_dir, uuids=None, process_volumetric=False):
     dataset_dir = Path(output_dir)
     for i, workdir in enumerate(workdir_names): # TODO: parallelize to allow running on short queue
+        if workdir is None: continue
         workdir = Path(strip_hostname(workdir))
         vasprun = Vasprun(zpath(workdir/'vasprun.xml'), parse_potcar_file=False)
         if not vasprun.converged_electronic:
@@ -260,6 +261,7 @@ class SlabPesStaticFlowMaker(Maker):
                 file_names=self.clean_files,
                 allow_zpath=True,
             )
+            cleanup.config.on_missing_references = OnMissing.NONE
             jobs += [cleanup]
 
         return Flow(jobs=jobs, output=output, name=self.name)
