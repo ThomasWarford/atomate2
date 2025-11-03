@@ -20,6 +20,7 @@ from monty.os.path import zpath
 from monty.serialization import loadfn
 from ase.io import read, write
 from mp_api.client import MPRester
+from pymatgen.io.ase import AseAtomsAdaptor
 
 from atomate2.vasp.jobs.matpes import MatPesGGAStaticMaker, MatPesMetaGGAStaticMaker
 from atomate2.common.jobs.utils import remove_workflow_files
@@ -30,6 +31,41 @@ if TYPE_CHECKING:
     from pathlib import Path
     from pymatgen.core import Structure
     from collections.abc import Sequence
+
+# functions that can be used outside slabpes, but need to be here for atomate to be happy
+def get_dipol(structure):
+    weights = [site.species.weight for site in structure]
+    center_of_mass = np.average(structure.cart_coords, weights=weights, axis=0).tolist()
+    return center_of_mass
+
+def estimate_dipole(structure_with_charge):
+    dipol = get_dipol(structure_with_charge)
+
+    # get positions - dipol
+    positions_minus_dipol = structure_with_charge.cart_coords - dipol
+    # get charges
+    charges = structure_with_charge.site_properties['charge']
+    charges = np.array(charges)[:, None] # for broadcasting
+    if (charges is not None) and not (None in charges):
+        return (charges * positions_minus_dipol).sum(axis=0)
+    else:
+        return None
+
+def get_structure_with_charge(atoms, mpid_to_average_charges_path):
+    mpid_to_average_charge = loadfn(mpid_to_average_charges_path)
+    average_charges = mpid_to_average_charge[atoms.info['bulk_mpid']]
+    charges = list(map(average_charges.get, atoms.get_chemical_symbols()))
+
+    structure_with_charge = AseAtomsAdaptor.get_structure(atoms)
+    structure_with_charge.add_site_property('charge', charges)
+    return structure_with_charge
+    
+def estimate_dipole_from_oxidation_states(atoms):
+    try:
+        struct = get_structure_with_charge(atoms, '/home/s5f/twarf.s5f/.dft/SurfPES/mp_data/mpid_to_average_oxidation_states.json.gz') # TODO: remove this hack
+        return estimate_dipole(struct)
+    except KeyError:
+        return None
 
 def bulk_mpid_to_bulk_bandgap(bulk_mpid):
     try:
@@ -116,7 +152,9 @@ def post_process_slabpes(workdir_names, output_dir, uuids=None, process_volumetr
         if bulk_mpid is not None:
             atoms.info['bulk_mpid'] = bulk_mpid
             bulk_band_gap = bulk_mpid_to_bulk_bandgap(bulk_mpid)
+            dipole_estimate_oxidation_state = estimate_dipole_from_oxidation_states(atoms)
         if bulk_band_gap is not None: atoms.info['bulk_band_gap'] = bulk_band_gap
+        if dipole_estimate_oxidation_state is not None: atoms.info['dipole_estimate_oxidation_state'] = dipole_estimate_oxidation_state
         
         # 
         if dipole is not None: atoms.info['dipole'] = dipole
