@@ -75,7 +75,9 @@ def bulk_mpid_to_bulk_bandgap(bulk_mpid):
                 fields=["material_id", "band_gap"]
             )
         return docs[0].band_gap 
-    except:
+    except Exception as e:
+        print("Error getting bulk bandgap:")
+        print(e)
         return None
     
 def add_tags_from_input_dct(input_dct, atoms):
