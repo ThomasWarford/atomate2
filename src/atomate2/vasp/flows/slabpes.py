@@ -208,7 +208,7 @@ def closeness_metrics(atoms, k=10, radii_table=covalent_radii):
     }
 
 @job
-def post_process_slabpes(workdir_names, output_dir, uuids=None, process_volumetric=False):
+def post_process_slabpes(workdir_names, output_dir, uuids=None, process_volumetric=True):
     dataset_dir = Path(output_dir)
     for i, workdir in enumerate(workdir_names): # TODO: parallelize to allow running on short queue
         if workdir is None: continue
@@ -290,7 +290,8 @@ def post_process_slabpes(workdir_names, output_dir, uuids=None, process_volumetr
         atoms = add_tags_from_input_dct(input_dct, atoms) # TODO: test
         # closeness metrics
         atoms.info |= closeness_metrics(atoms)
-        atoms.info |= get_volumetric_data_properties(workdir)
+        if process_volumetric:
+            atoms.info |= get_volumetric_data_properties(workdir)
 
         # save
         functional_dipole_label = xc_functional
@@ -298,16 +299,6 @@ def post_process_slabpes(workdir_names, output_dir, uuids=None, process_volumetr
         out_dir = (dataset_dir / functional_dipole_label / id); out_dir.mkdir(parents=True, exist_ok=True)
         write(out_dir / "labels.xyz.gz", atoms, append=True)
 
-        if process_volumetric:
-            # chgcar stuff
-            c_stem = 'charge'
-            if efield is not None: c_stem += f'_e{efield}'
-            Chgcar.from_file(zpath(workdir/'CHGCAR')).to_cube(out_dir / f'{c_stem}.cube.gz')
-
-            # locpot stuff
-            l_stem = 'locpot'
-            if efield is not None: l_stem += f'_e{efield}'
-            Locpot.from_file(zpath(workdir/'LOCPOT')).to_cube(out_dir / f'{l_stem}.cube.gz')
 
 @dataclass
 class SlabPesStaticFlowMaker(Maker):
