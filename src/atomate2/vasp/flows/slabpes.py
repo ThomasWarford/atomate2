@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 from jobflow import Maker, Flow, job, OnMissing
 from pymatgen.io.vasp.sets import SlabPESStaticSet
 import numpy as np
+import h5py
 
 from pathlib import Path
 from atomate2.vasp.powerups import update_user_incar_settings
@@ -21,6 +22,7 @@ from monty.serialization import loadfn
 from ase.io import read, write
 from mp_api.client import MPRester
 from pymatgen.io.ase import AseAtomsAdaptor
+from ase.data import covalent_radii
 
 from atomate2.vasp.jobs.matpes import MatPesGGAStaticMaker, MatPesMetaGGAStaticMaker
 from atomate2.common.jobs.utils import remove_workflow_files
@@ -97,6 +99,113 @@ def add_tags_from_input_dct(input_dct, atoms):
     except:
         print('Failed to add tags')
         return atoms
+
+def get_volumetric_data_properties(workdir):
+    def get_grad(data, lattice_vectors):
+        grad = np.stack(np.gradient(data, *(1/n for n in data.shape)),axis=0)
+        return np.einsum('ij, j...->i...', np.linalg.inv(lattice_vectors), grad)
+
+    def get_smoothness_score(data, lattice_vectors):
+        grad = get_grad(data, lattice_vectors)
+        grad_squared_integral = np.abs(np.linalg.det(lattice_vectors)) * (grad**2).mean()
+        return grad_squared_integral
+    
+    properties = {}
+    
+    charge_data = {}
+
+    # add AECCARs
+    for i in range(3):
+        aeccar = Chgcar.from_file(zpath(workdir/f'AECCAR{i}'))
+        charge = aeccar.data['total'] # work with total charge
+        charge = np.swapaxes(charge, 0, 2) # make z axis first
+        charge_data[f'aeccar{i}'] = charge
+
+    with h5py.File(workdir/"vaspwave.h5", "r") as f: 
+        chgcar = np.array(f['charge']['charge'])
+        charge_data['chgcar'] = chgcar[0]
+        grid = np.array(f['charge']['grid']) # NOTE: grid != chgcar.shape!! Weird from vasp
+
+        charge_data['spin_density'] = chgcar[1]
+
+        lattice_vectors =  np.array(f['structure']['positions']['lattice_vectors'])
+    cell_volume = np.abs(np.linalg.det(lattice_vectors))
+
+    past_shape = None
+    for label, data in charge_data.items():
+        if past_shape:
+            np.testing.assert_equal(data.shape, past_shape)
+        past_shape = data.shape
+
+        properties[f'{label}_sum'] = data.sum() / np.prod(grid)
+        properties[f'{label}_smoothness'] = get_smoothness_score(data/(np.prod(grid) * cell_volume), lattice_vectors)
+
+
+    properties['aeccar2_minus_aeccar1_sum'] = properties['aeccar2_sum'] - properties['aeccar1_sum']
+    properties['chgcar_minus_aeccar1_sum'] = properties['chgcar_sum'] - properties['aeccar1_sum']
+    properties['aeccar2_minus_aeccar1_smoothness'] = get_smoothness_score((charge_data['aeccar2']-charge_data['aeccar1'])/(np.prod(grid) * cell_volume), lattice_vectors)
+    properties['chgcar_minus_aeccar1_smoothness'] = get_smoothness_score((charge_data['chgcar']-charge_data['aeccar1'])/(np.prod(grid) * cell_volume), lattice_vectors)
+
+    # read vaspout
+    with h5py.File(workdir/"vaspout.h5", "r") as f:
+        num_valence_electrons = np.array(f['results']["electron_eigenvalues"]["nelectrons"])
+
+        hartree = np.array(f['results']["potential"]["hartree"])[0]
+        ionic = np.array(f['results']["potential"]["ionic"])[0]
+        xc = np.array(f['results']["potential"]["xc"])
+        v_xc = xc[0]
+        b_xc = xc[1]
+        total = np.array(f['results']["potential"]["total"])
+        v_total = total[0]
+        b_total = total[1]
+
+        np.testing.assert_equal(hartree.shape, ionic.shape)
+        np.testing.assert_equal(hartree.shape, v_xc.shape)
+        np.testing.assert_equal(hartree.shape, b_xc.shape)
+        np.testing.assert_equal(hartree.shape, v_total.shape)
+        np.testing.assert_equal(hartree.shape, b_total.shape)
+
+    # add potential properties
+    potential_smoothness_targets = {
+        'v_hartree': hartree,
+        'v_ionic': ionic,
+        'v_xc': v_xc,
+        'b_xc': b_xc,
+        'v_total': v_total,
+        'b_total': b_total,
+    }
+    for label, data in potential_smoothness_targets.items():
+        properties[f'{label}_smoothness'] = get_smoothness_score(data, lattice_vectors)
+
+
+    # add other properties
+    properties['grid'] = grid
+    properties['num_valence_electrons'] = num_valence_electrons
+
+    return properties
+    
+def closeness_metrics(atoms, k=10, radii_table=covalent_radii):
+    # scaling factors
+    r = radii_table[atoms.get_atomic_numbers()]              # (N,)
+    R = r[:, None] + r[None, :] # (N, N)
+
+    # get per-atom nn distance
+    D = atoms.get_all_distances(mic=True)  # (N, N)
+    # Replace diagonal zeros with +inf so they aren't selected
+    np.fill_diagonal(D, np.inf)
+    
+    # do scaling
+    scaled_D = D / R
+
+    scaled_per_atom_nn = scaled_D.min(axis=0)
+    bottom_k_vals = np.partition(scaled_per_atom_nn, k)[:k]
+    
+    print(len(atoms))
+
+    return {
+        'min_scaled_distance': scaled_D.min(),
+        f'avg_bottomk{k}_nn_distance': bottom_k_vals.mean(),
+    }
 
 @job
 def post_process_slabpes(workdir_names, output_dir, uuids=None, process_volumetric=False):
@@ -179,6 +288,9 @@ def post_process_slabpes(workdir_names, output_dir, uuids=None, process_volumetr
 
         # adsorbate tags + net adsorbate force
         atoms = add_tags_from_input_dct(input_dct, atoms) # TODO: test
+        # closeness metrics
+        atoms.info |= closeness_metrics(atoms)
+        atoms.info |= get_volumetric_data_properties(workdir)
 
         # save
         functional_dipole_label = xc_functional
