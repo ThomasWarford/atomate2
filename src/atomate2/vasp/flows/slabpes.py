@@ -230,8 +230,7 @@ def post_process_slabpes(workdir_names, output_dir, uuids=None, process_volumetr
         atoms.info['ref_energy'] = atoms.get_total_energy()
         atoms.info['ref_stress'] = atoms.get_stress(voigt=True)
         atoms.arrays['ref_forces'] = atoms.get_forces()
-        try: dipole = atoms.get_dipole_moment()
-        except: dipole = None
+        if has_dipole_correction: atoms.info['ref_dipole'] = atoms.get_dipole_moment()
         atoms.calc = None
 
 
@@ -268,7 +267,6 @@ def post_process_slabpes(workdir_names, output_dir, uuids=None, process_volumetr
         if dipole_estimate_oxidation_state is not None: atoms.info['dipole_estimate_oxidation_state'] = dipole_estimate_oxidation_state
         
         # 
-        if dipole is not None: atoms.info['dipole'] = dipole
         atoms.info['restart_count'] = restart_count
         atoms.info['num_scf'] = num_scf
         atoms.info['efermi'] = efermi
